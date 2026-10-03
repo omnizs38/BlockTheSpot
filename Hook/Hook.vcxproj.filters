@@ -27,13 +27,22 @@
     <ClInclude Include="cef_zip_reader_hook.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="developer_mode.h">
+    <ClInclude Include="cef_offsets.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="funct_pointer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="IAT_hook.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="import_hook.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="config.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Shared\module_paths.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="kill_crashpad.h">
@@ -55,9 +64,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="WinTrust_hook.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="css_cosmetic.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -89,7 +95,7 @@
     <ClCompile Include="IAT_hook.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="developer_mode.cpp">
+    <ClCompile Include="cef_offsets.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="cef_zip_reader_hook.cpp">
@@ -99,9 +105,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="WinTrust_hook.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="css_cosmetic.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

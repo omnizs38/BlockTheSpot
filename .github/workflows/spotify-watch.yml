@@ -1,0 +1,98 @@
+name: Watch Spotify and Auto-Build
+
+# Run the same native + JS + real-client checks as branch CI, even if the
+# installer version is unchanged. Never publish unverified binaries.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Publish even if the Spotify version has not changed
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: spotify-watch
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decide whether to publish
+        id: check
+        env:
+          VERSION: ${{ needs.verify.outputs.spotify_version }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          previous=$(tr -d '\r\n' < .watched-spotify-version)
+          if [ "$VERSION" != "$previous" ] || [ "$FORCE" = 'true' ]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.check.outputs.changed == 'true'
+        with:
+          name: BlockTheSpot-windows-x64
+          path: dist
+      - name: Prepare scoped release notes
+        if: steps.check.outputs.changed == 'true'
+        shell: python
+        run: |
+          from pathlib import Path
+          notes = '\n\n'.join((Path('dist') / name).read_text(encoding='utf-8-sig') for name in ('build.txt', 'verify.txt', 'smoke.txt'))
+          Path('release-notes.md').write_text(notes, encoding='utf-8')
+      - name: Publish verified release
+        if: steps.check.outputs.changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.verify.outputs.spotify_version }}-auto.${{ github.run_number }}
+          name: BlockTheSpot ${{ needs.verify.outputs.spotify_version }}
+          body_path: release-notes.md
+          files: |
+            dist/blockthespot.dll
+            dist/chrome_elf.dll
+            dist/config.ini
+      - name: Record verified version
+        if: steps.check.outputs.changed == 'true'
+        env:
+          VERSION: ${{ needs.verify.outputs.spotify_version }}
+        run: |
+          printf '%s' "$VERSION" > .watched-spotify-version
+          git config user.name 'github-actions'
+          git config user.email 'github-actions@github.com'
+          git add .watched-spotify-version
+          if ! git diff --cached --quiet; then
+            git commit -m "[skip ci] watched Spotify $VERSION"
+            git push
+          fi
+
+  alert:
+    needs: verify
+    if: always() && needs.verify.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open or update compatibility alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='Spotify compatibility verification failed'
+          body="Verification failed: $RUN_URL. No release was published. Inspect the failing step and verification-reports artifact; this can be a build, download, JS, native-hook or startup failure. Audio blocking is not established by the startup smoke test."
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi

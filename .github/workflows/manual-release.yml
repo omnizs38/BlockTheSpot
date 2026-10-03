@@ -1,0 +1,66 @@
+name: Manual Build And Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Optional release tag (defaults to tested Spotify version + run number)
+        type: string
+      release_name:
+        description: Optional release name
+        type: string
+      prerelease:
+        description: Mark the release as a prerelease
+        type: boolean
+        default: false
+      draft:
+        description: Create a draft release
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: BlockTheSpot-windows-x64
+          path: dist
+      - name: Resolve metadata from tested client
+        id: meta
+        env:
+          VERSION: ${{ needs.verify.outputs.spotify_version }}
+          TAG: ${{ inputs.tag_name }}
+          NAME: ${{ inputs.release_name }}
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+          tag = os.environ['TAG'] or f"v{os.environ['VERSION']}-build.{os.environ['GITHUB_RUN_NUMBER']}"
+          name = os.environ['NAME'] or f"BlockTheSpot {os.environ['VERSION']}"
+          if any(c in tag + name for c in '\r\n'):
+              raise SystemExit('Release metadata must be single-line')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f'tag={tag}\nname={name}\n')
+          notes = '\n\n'.join((Path('dist') / file).read_text(encoding='utf-8-sig') for file in ('build.txt', 'verify.txt', 'smoke.txt'))
+          Path('release-notes.md').write_text(notes, encoding='utf-8')
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          body_path: release-notes.md
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            dist/blockthespot.dll
+            dist/chrome_elf.dll
+            dist/config.ini
