@@ -6,9 +6,16 @@ Mirrors runtime ordering, unique matches, paired-patch atomicity and write bound
 Never modifies the input bundles. Native installation is checked separately by CI.
 """
 import configparser
+import os
 import re
 import sys
 from pathlib import Path
+
+
+def workflow_error(message):
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        escaped = str(message).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print(f'::error title=SPA patch verification::{escaped}')
 
 
 def parse_sig(text):
@@ -141,12 +148,14 @@ def verify(cfg_path, spa_dir):
             print('\nBROKEN:')
             for failure in failures:
                 print(f'FAIL  {failure}')
+                workflow_error(failure)
             return 1
         print(f'\nAll {checked} JS patch group(s) have unique matches and bounded writes.')
         print('Static JS check only; native hook installation and audio blocking are NOT verified here.')
         return 0
     except (OSError, ValueError, configparser.Error) as error:
         print(f'FAIL  config: {error}')
+        workflow_error(f'config: {error}')
         return 1
 
 
