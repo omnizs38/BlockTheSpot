@@ -12,11 +12,11 @@ static cef_urlrequest_create_t cef_urlrequest_create_orig = nullptr;
 static cef_urlrequest_create_t cef_urlrequest_create_impl = nullptr;
 static cef_string_free_t free_string = nullptr;
 
-static bool is_blocked(const char* url) noexcept
+static size_t blocked_by_rule(const char* url) noexcept
 {
     for (size_t i = 0; i < cef_block_count; ++i)
-        if (strstr(url, cef_block_list[i])) return true;
-    return false;
+        if (contains_ascii_i(url, cef_block_list[i])) return i;
+    return SIZE_MAX;
 }
 
 void* cef_urlrequest_create_stub(void* request, void* client, void* context)
@@ -45,7 +45,19 @@ static void* cef_urlrequest_create_hook(void* request, void* client, void* conte
     buffer[length] = '\0';
     static LONG active = 0;
     if (!InterlockedExchange(&active, 1)) log_info("CEF URL handler active (URL decoded).");
-    const bool blocked = is_blocked(buffer);
+    const size_t rule = blocked_by_rule(buffer);
+    const bool blocked = rule != SIZE_MAX;
+    if (blocked && rule < sizeof(LONG) * 8) {
+        static volatile LONG observed_rules = 0;
+        const LONG mask = static_cast<LONG>(1UL << rule);
+        const LONG previous = InterlockedOr(&observed_rules, mask);
+        if (!(previous & mask)) {
+            char status[96];
+            _snprintf_s(status, sizeof(status), _TRUNCATE,
+                "URL block rule %zu active (request details remain debug-only).", rule + 1);
+            log_info(status);
+        }
+    }
     // Detailed URLs are opt-in (Level=2), never part of the default diagnostics.
     char message[256];
     _snprintf_s(message, sizeof(message), _TRUNCATE, "%s:%s", blocked ? "block" : "allow", buffer);
@@ -77,6 +89,10 @@ bool hook_cef_url(HMODULE libcef) noexcept
         ++cef_block_count;
     }
     cef_urlrequest_create_impl = cef_urlrequest_create_hook;
-    log_info("CEF URL handler ready (imports not yet patched).");
+    char status[96];
+    _snprintf_s(status, sizeof(status), _TRUNCATE,
+        "CEF URL handler ready with %zu case-insensitive rules (imports not yet patched).",
+        cef_block_count);
+    log_info(status);
     return true;
 }

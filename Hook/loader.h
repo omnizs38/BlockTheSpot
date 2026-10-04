@@ -20,7 +20,7 @@ inline bool initialize_hook_paths(HMODULE module) noexcept
 constexpr size_t SHARED_BUFFER_SIZE = 1024; // increase if need.
 inline char shared_buffer[SHARED_BUFFER_SIZE];
 
-constexpr size_t MAX_CEF_BLOCK_LIST = 5;
+constexpr size_t MAX_CEF_BLOCK_LIST = 16;
 constexpr size_t MAX_CEF_BUFFER_MODIFY_LIST = 10;
 constexpr size_t MAX_URL_LEN = 50;
 
