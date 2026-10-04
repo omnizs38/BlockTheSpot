@@ -18,6 +18,28 @@ def workflow_error(message):
         print(f'::error title=SPA patch verification::{escaped}')
 
 
+def marker_diagnostics(paths):
+    markers = (
+        b'adsEnabled', b'allSponsorships', b'ADS_PREMIUM', b'isHptoHidden',
+        b'/sponsoredplaylist/', b'getInStreamAd', b'onAdMessageCallbacks',
+        b'inStreamApi', b'leaderboard', b'ad-logic',
+    )
+    found = []
+    for marker in markers:
+        hits = []
+        total = 0
+        for path in paths:
+            data = path.read_bytes()
+            count = data.count(marker)
+            if count:
+                total += count
+                if len(hits) < 3:
+                    hits.append(path.name)
+        if total:
+            found.append(f'{marker.decode()}={total}@{",".join(hits)}')
+    return '; '.join(found) or 'no known ad markers found'
+
+
 def parse_sig(text):
     tokens = text.split()
     if not tokens or len(text.encode('utf-8')) >= 1023:
@@ -135,9 +157,14 @@ def verify(cfg_path, spa_dir):
                             candidates.append((path, len(found)))
                     if len(candidates) != 1 or candidates[0][1] != 1:
                         total = sum(count for _, count in candidates)
+                        diagnostics = (
+                            f'; markers: {marker_diagnostics(javascript)}'
+                            if total == 0 and os.environ.get('GITHUB_ACTIONS') == 'true'
+                            else ''
+                        )
                         raise ValueError(
                             f'{patch}: expected one match across JavaScript bundles, found '
-                            f'{"2+" if total > 1 else 0}')
+                            f'{"2+" if total > 1 else 0}{diagnostics}')
                     path = candidates[0][0]
                     data_by_path[path] = apply_patch(cp, patch, data_by_path[path])
                     checked += 1
