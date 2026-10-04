@@ -27,6 +27,7 @@ def marker_diagnostics(paths):
     found = []
     for marker in markers:
         hits = []
+        samples = []
         total = 0
         for path in paths:
             data = path.read_bytes()
@@ -35,8 +36,18 @@ def marker_diagnostics(paths):
                 total += count
                 if len(hits) < 3:
                     hits.append(path.name)
+                start = 0
+                while len(samples) < 3:
+                    offset = data.find(marker, start)
+                    if offset < 0:
+                        break
+                    sample = data[offset:offset + len(marker) + 48].decode('ascii', 'replace')
+                    samples.append(sample.replace('\r', ' ').replace('\n', ' '))
+                    start = offset + len(marker)
         if total:
-            found.append(f'{marker.decode()}={total}@{",".join(hits)}')
+            found.append(
+                f'{marker.decode()}={total}@{",".join(hits)}'
+                f'[{" | ".join(samples)}]')
     return '; '.join(found) or 'no known ad markers found'
 
 
