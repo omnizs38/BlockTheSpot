@@ -94,6 +94,7 @@ def verify(cfg_path, spa_dir):
             return 0
         targets = numbered(cp, 'Buffer_modify', 10)
         root = Path(spa_dir).resolve()
+        data_by_path = {}
         checked = 0
         failures = []
         for target in targets:
@@ -101,17 +102,41 @@ def verify(cfg_path, spa_dir):
                 path = (root / target).resolve()
                 if not path.is_relative_to(root):
                     raise ValueError('target escapes bundle directory')
-                data = path.read_bytes()
+                data = data_by_path.setdefault(path, path.read_bytes())
                 patches = numbered(cp, target, 10)
                 for patch in patches:
                     try:
                         data = apply_patch(cp, patch, data)
+                        data_by_path[path] = data
                         checked += 1
                         print(f'OK    {target} / {patch}')
                     except (ValueError, configparser.Error) as error:
                         failures.append(f'{target} / {patch}: {error}')
             except (OSError, ValueError) as error:
                 failures.append(f'{target}: {error}')
+        if cp.get('Buffer_scan', 'Enable', fallback='0') == '1':
+            try:
+                scan_patches = numbered(cp, 'Buffer_scan', 10)
+                javascript = sorted(root.rglob('*.js'))
+                for patch in scan_patches:
+                    signature = parse_sig(cp.get(patch, 'Signature_1'))
+                    candidates = []
+                    for path in javascript:
+                        data = data_by_path.setdefault(path, path.read_bytes())
+                        found = matches(data, signature)
+                        if found:
+                            candidates.append((path, len(found)))
+                    if len(candidates) != 1 or candidates[0][1] != 1:
+                        total = sum(count for _, count in candidates)
+                        raise ValueError(
+                            f'{patch}: expected one match across JavaScript bundles, found '
+                            f'{"2+" if total > 1 else 0}')
+                    path = candidates[0][0]
+                    data_by_path[path] = apply_patch(cp, patch, data_by_path[path])
+                    checked += 1
+                    print(f'OK    {path.relative_to(root)} / {patch} (scan)')
+            except (OSError, ValueError, configparser.Error) as error:
+                failures.append(f'Buffer_scan: {error}')
         if failures:
             print('\nBROKEN:')
             for failure in failures:

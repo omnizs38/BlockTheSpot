@@ -80,6 +80,29 @@ class VerifierTests(unittest.TestCase):
         data = apply_patch(config, 'patch', b'ABCD')
         self.assertEqual(apply_patch(config, 'second', data), b'0\xffCD')
 
+    def test_scan_finds_a_renamed_bundle_without_mutating_it(self):
+        bundle = self.root / 'renamed-module.js'
+        bundle.write_bytes(b'prefix adsEnabled:!0 suffix')
+        scan = (
+            '[Buffer_scan]\nEnable=1\n1=disable_ads\n'
+            '[disable_ads]\n'
+            'Signature_1=61 64 73 45 6E 61 62 6C 65 64 3A 21 30\n'
+            'Value_1=31\nOffset_1=12\n'
+        )
+        self.assertEqual(self.run_config(self.base + self.patch + scan), 0)
+        self.assertEqual(bundle.read_bytes(), b'prefix adsEnabled:!0 suffix')
+
+    def test_scan_rejects_cross_bundle_ambiguity(self):
+        (self.root / 'first.js').write_bytes(b'adsEnabled:!0')
+        (self.root / 'second.js').write_bytes(b'adsEnabled:!0')
+        scan = (
+            '[Buffer_scan]\nEnable=1\n1=disable_ads\n'
+            '[disable_ads]\n'
+            'Signature_1=61 64 73 45 6E 61 62 6C 65 64 3A 21 30\n'
+            'Value_1=31\nOffset_1=12\n'
+        )
+        self.assertEqual(self.run_config(self.base + self.patch + scan), 1)
+
     def test_disabled_is_explicit(self):
         self.config.write_text('[Buffer_modify]\nEnable=0\n')
         output = io.StringIO()

@@ -13,7 +13,7 @@
 A maintained fork of [BlockTheSpot](https://github.com/mrpond/BlockTheSpot), built on [Nuzair46's continuation](https://github.com/Nuzair46/BlockTheSpot). It patches your existing standalone Spotify client rather than downloading a replacement from a third-party mirror.
 
 - **More than one interception path.** Hooks CEF's ordinary and delayed imports by name, plus dynamic `GetProcAddress` lookups, including Windows API-set imports used by newer Spotify versions.
-- **Layered ad blocking.** Blocks audio-ad, ad-logic, Gabo and sponsored-playlist requests, forces Spotify's own `adsEnabled` UI state off, and removes the leaderboard banner. URL matching is ASCII case-insensitive so casing changes do not bypass a rule.
+- **Layered ad blocking.** Blocks audio-ad, ad-logic, Gabo and sponsored-playlist requests, finds and disables Spotify's own `adsEnabled` UI state even when the bundle filename changes, and removes the leaderboard banner. URL matching is ASCII case-insensitive so casing changes do not bypass a rule.
 - **Defensive patching.** Checks CEF object sizes, function-pointer ranges and memory protections. JavaScript patches need unique matches and bounded writes; paired edits are validated before either is applied.
 - **Safer installation and loading.** Downloads are pinned to one release and checked against GitHub's SHA-256 digests before Spotify is stopped. Failed replacements roll back, backups are signature/version checked, and DLL/config paths follow the installation rather than the working directory.
 - **Checks that exercise the hooks.** Branch CI and the daily watcher test installation failures, native hooks and loader argument forwarding, validate JS patches, then install/reinstall, launch and uninstall the official client on a disposable Windows runner.
@@ -55,7 +55,7 @@ Uninstall restores and verifies the genuine DLL **before** removing the payload.
 - **`chrome_elf.dll` (loader)** forwards Chromium exports to the original signed DLL, renamed `chrome_elf_required.dll`, and loads the payload. It preserves Windows x64 integer, floating-point and stack arguments and resolves exports without a shared mutable cache.
 - **`blockthespot.dll` (payload)** intercepts CEF URL requests and SPA reads. It redirects Spotify's signature check to the original DLL rather than modifying Spotify's signed binaries on disk.
 - **URL rules** block scoped ad request paths, including `/ads/`, `/ad-logic/`, `/ad/v1/`, Gabo receiver traffic and sponsored-playlist inventory. The default config also blocks `/desktop-update/`; remove that rule if you want Spotify's update requests to pass through. It deliberately does not block whole Spotify hosts or media-manifest paths, which can break normal playback.
-- **SPA patches** force the client's own `adsEnabled` flag off and hide the leaderboard banner using length-preserving edits. Each signature must match exactly once or the file is left unchanged.
+- **SPA patches** force the client's own `adsEnabled` flag off and hide the leaderboard banner using length-preserving edits. Named patches remain file-scoped; scan patches survive bundle renames. Release validation requires every scan signature to match exactly once across all JavaScript bundles.
 
 The request and UI layers are independent defenses, but **both depend on working native interception**. A matching JS signature alone is not proof that ad blocking works. The project does not spoof Premium subscription state.
 

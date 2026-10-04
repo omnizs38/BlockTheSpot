@@ -22,6 +22,7 @@ inline char shared_buffer[SHARED_BUFFER_SIZE];
 
 constexpr size_t MAX_CEF_BLOCK_LIST = 16;
 constexpr size_t MAX_CEF_BUFFER_MODIFY_LIST = 10;
+constexpr size_t MAX_CEF_BUFFER_SCAN_LIST = 10;
 constexpr size_t MAX_URL_LEN = 50;
 
 inline size_t CEF_REQUEST_GET_URL_OFFSET = 0x30;

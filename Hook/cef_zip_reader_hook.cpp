@@ -8,6 +8,9 @@
 
 static size_t cef_buffer_modify_count = 0;
 static char cef_buffer_list[MAX_CEF_BUFFER_MODIFY_LIST][MAX_URL_LEN] = {};
+static size_t cef_buffer_scan_count = 0;
+static char cef_buffer_scan_list[MAX_CEF_BUFFER_SCAN_LIST][MAX_URL_LEN] = {};
+static volatile LONG cef_buffer_scan_applied = 0;
 using create_reader_t = void* (*)(void*);
 using read_file_t = int(CALLBACK*)(void*, void*, size_t);
 static create_reader_t create_orig = nullptr;
@@ -62,6 +65,30 @@ static void patch_file(const char* file, void* buffer, size_t length) noexcept
     }
 }
 
+static bool is_javascript(const char* file) noexcept
+{
+    if (!file) return false;
+    const size_t length = strlen(file);
+    return length >= 3 && file[length - 3] == '.' &&
+        (file[length - 2] == 'j' || file[length - 2] == 'J') &&
+        (file[length - 1] == 's' || file[length - 1] == 'S');
+}
+
+static void scan_javascript(const char* file, void* buffer, size_t length) noexcept
+{
+    if (!is_javascript(file)) return;
+    for (size_t i = 0; i < cef_buffer_scan_count; ++i) {
+        const LONG mask = static_cast<LONG>(1UL << i);
+        if (cef_buffer_scan_applied & mask) continue;
+        if (!do_patch_buffer(cef_buffer_scan_list[i], buffer, length)) continue;
+        InterlockedOr(&cef_buffer_scan_applied, mask);
+        char message[256];
+        _snprintf_s(message, sizeof(message), _TRUNCATE,
+            "SPA scan patch applied: %s / %s", file, cef_buffer_scan_list[i]);
+        log_info(message);
+    }
+}
+
 static int CALLBACK read_file_hook(void* self, void* buffer, size_t capacity)
 {
     const auto original = read_orig.load();
@@ -90,6 +117,7 @@ static int CALLBACK read_file_hook(void* self, void* buffer, size_t capacity)
             break;
         }
     }
+    scan_javascript(file, buffer, static_cast<size_t>(length));
     return length;
 }
 
@@ -139,7 +167,22 @@ bool hook_cef_reader(HMODULE libcef) noexcept
         if (!config_string("Buffer_modify", key, "", cef_buffer_list[i], MAX_URL_LEN, CONFIG_FILEW)) break;
         ++cef_buffer_modify_count;
     }
+    cef_buffer_scan_count = 0;
+    cef_buffer_scan_applied = 0;
+    if (config_int("Buffer_scan", "Enable", 0, CONFIG_FILEW)) {
+        for (size_t i = 0; i < MAX_CEF_BUFFER_SCAN_LIST; ++i) {
+            char key[16];
+            _snprintf_s(key, sizeof(key), _TRUNCATE, "%zu", i + 1);
+            if (!config_string("Buffer_scan", key, "", cef_buffer_scan_list[i], MAX_URL_LEN, CONFIG_FILEW))
+                break;
+            ++cef_buffer_scan_count;
+        }
+    }
     create_impl = create_reader_hook;
-    log_info("CEF ZIP handler ready (imports not yet patched).");
+    char status[128];
+    _snprintf_s(status, sizeof(status), _TRUNCATE,
+        "CEF ZIP handler ready with %zu named targets and %zu scan rules (imports not yet patched).",
+        cef_buffer_modify_count, cef_buffer_scan_count);
+    log_info(status);
     return true;
 }
