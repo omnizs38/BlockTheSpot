@@ -177,6 +177,24 @@ static void guard_tests()
     CHECK(!get_funct_guarded<FARPROC>(&object, sizeof(size_t))); // unknown module fails closed
 }
 
+static void url_rule_tests()
+{
+    CHECK(contains_ascii_i(
+        "https://spclient.wg.spotify.com/ADS/v2/config",
+        "/ads/"));
+    CHECK(contains_ascii_i(
+        "https://spclient.wg.spotify.com/sponsoredplaylist/v1/sponsored",
+        "/sponsoredplaylist/"));
+    CHECK(contains_ascii_i(
+        "https://guc-spclient.spotify.com/gabo.receiver-service/public",
+        "gabo.receiver-service"));
+    CHECK(!contains_ascii_i(
+        "https://audio-fa.scdn.co/audio/track.mp3",
+        "/ads/"));
+    CHECK(!contains_ascii_i("https://spotify.com/", ""));
+    CHECK(!contains_ascii_i(nullptr, "/ads/"));
+}
+
 static WINTRUST_DATA* expected_trust_data = nullptr;
 static bool expect_redirect = false;
 static LONG WINAPI capture_trust(HWND, GUID*, LPVOID opaque)
@@ -250,6 +268,6 @@ static void path_and_trust_tests()
 
 int main()
 {
-    import_tests(); pattern_tests(); guard_tests(); path_and_trust_tests();
-    std::printf("PASS: %d native checks (imports, guards, patches, Unicode paths, trust redirection).\n", checks);
+    import_tests(); pattern_tests(); guard_tests(); url_rule_tests(); path_and_trust_tests();
+    std::printf("PASS: %d native checks (imports, guards, URL rules, patches, Unicode paths, trust redirection).\n", checks);
 }

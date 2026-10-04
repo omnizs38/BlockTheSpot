@@ -6,9 +6,49 @@ Mirrors runtime ordering, unique matches, paired-patch atomicity and write bound
 Never modifies the input bundles. Native installation is checked separately by CI.
 """
 import configparser
+import os
 import re
 import sys
 from pathlib import Path
+
+
+def workflow_error(message):
+    if os.environ.get('GITHUB_ACTIONS') == 'true':
+        escaped = str(message).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+        print(f'::error title=SPA patch verification::{escaped}')
+
+
+def marker_diagnostics(paths):
+    markers = (
+        b'adsEnabled', b'allSponsorships', b'ADS_PREMIUM', b'isHptoHidden',
+        b'/sponsoredplaylist/', b'getInStreamAd', b'onAdMessageCallbacks',
+        b'inStreamApi', b'leaderboard', b'ad-logic',
+    )
+    found = []
+    for marker in markers:
+        hits = []
+        samples = []
+        total = 0
+        for path in paths:
+            data = path.read_bytes()
+            count = data.count(marker)
+            if count:
+                total += count
+                if len(hits) < 3:
+                    hits.append(path.name)
+                start = 0
+                while len(samples) < 3:
+                    offset = data.find(marker, start)
+                    if offset < 0:
+                        break
+                    sample = data[offset:offset + len(marker) + 48].decode('ascii', 'replace')
+                    samples.append(sample.replace('\r', ' ').replace('\n', ' '))
+                    start = offset + len(marker)
+        if total:
+            found.append(
+                f'{marker.decode()}={total}@{",".join(hits)}'
+                f'[{" | ".join(samples)}]')
+    return '; '.join(found) or 'no known ad markers found'
 
 
 def parse_sig(text):
@@ -94,6 +134,7 @@ def verify(cfg_path, spa_dir):
             return 0
         targets = numbered(cp, 'Buffer_modify', 10)
         root = Path(spa_dir).resolve()
+        data_by_path = {}
         checked = 0
         failures = []
         for target in targets:
@@ -101,27 +142,58 @@ def verify(cfg_path, spa_dir):
                 path = (root / target).resolve()
                 if not path.is_relative_to(root):
                     raise ValueError('target escapes bundle directory')
-                data = path.read_bytes()
+                data = data_by_path.setdefault(path, path.read_bytes())
                 patches = numbered(cp, target, 10)
                 for patch in patches:
                     try:
                         data = apply_patch(cp, patch, data)
+                        data_by_path[path] = data
                         checked += 1
                         print(f'OK    {target} / {patch}')
                     except (ValueError, configparser.Error) as error:
                         failures.append(f'{target} / {patch}: {error}')
             except (OSError, ValueError) as error:
                 failures.append(f'{target}: {error}')
+        if cp.get('Buffer_scan', 'Enable', fallback='0') == '1':
+            try:
+                scan_patches = numbered(cp, 'Buffer_scan', 10)
+                javascript = sorted(root.rglob('*.js'))
+                for patch in scan_patches:
+                    signature = parse_sig(cp.get(patch, 'Signature_1'))
+                    candidates = []
+                    for path in javascript:
+                        data = data_by_path.setdefault(path, path.read_bytes())
+                        found = matches(data, signature)
+                        if found:
+                            candidates.append((path, len(found)))
+                    if len(candidates) != 1 or candidates[0][1] != 1:
+                        total = sum(count for _, count in candidates)
+                        diagnostics = (
+                            f'; markers: {marker_diagnostics(javascript)}'
+                            if total == 0 and os.environ.get('GITHUB_ACTIONS') == 'true'
+                            else ''
+                        )
+                        raise ValueError(
+                            f'{patch}: expected one match across JavaScript bundles, found '
+                            f'{"2+" if total > 1 else 0}{diagnostics}')
+                    path = candidates[0][0]
+                    data_by_path[path] = apply_patch(cp, patch, data_by_path[path])
+                    checked += 1
+                    print(f'OK    {path.relative_to(root)} / {patch} (scan)')
+            except (OSError, ValueError, configparser.Error) as error:
+                failures.append(f'Buffer_scan: {error}')
         if failures:
             print('\nBROKEN:')
             for failure in failures:
                 print(f'FAIL  {failure}')
+                workflow_error(failure)
             return 1
         print(f'\nAll {checked} JS patch group(s) have unique matches and bounded writes.')
         print('Static JS check only; native hook installation and audio blocking are NOT verified here.')
         return 0
     except (OSError, ValueError, configparser.Error) as error:
         print(f'FAIL  config: {error}')
+        workflow_error(f'config: {error}')
         return 1
 
 
